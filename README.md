@@ -130,7 +130,9 @@ First milestone (see [Initial implementation slice](docs/architecture.md#14-init
 - Bounded integer-lag (latency) and gain/polarity estimation for diagnosis.
   Compensation is applied only when the policy explicitly allows it, and
   within an explicit limit. A shifted comparison leaves out only the frames
-  the shift exposes, and reports how many.
+  the shift exposes, and reports how many. A pass that needed compensation
+  gets its own verdict (`PassWithCompensation`), stating what was compensated
+  and by how much. It never looks like a plain pass.
 - Time-windowed diagnostics: where the difference begins and which windows
   differ most.
 - A snapshot assertion macro with an explicit update mode

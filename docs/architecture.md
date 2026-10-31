@@ -79,7 +79,8 @@ A framework-independent Rust library, plus a small CLI, that:
 5. Keeps **diagnosis** and **acceptance** separate. An estimated lag or gain
    never changes the verdict unless the policy explicitly allows that
    compensation, within an explicit limit, and the report records that it was
-   applied.
+   applied. Compensation can never silently turn a regression into a pass:
+   a pass that needed compensation has its own verdict.
 6. Manages snapshot baselines with a deliberate update and review flow that
    integrates with `cargo test`, `cargo nextest` and CI.
 
@@ -118,6 +119,7 @@ A framework-independent Rust library, plus a small CLI, that:
 | F13 | Provide a snapshot assertion for Rust tests with explicit update modes, candidate files and duplicate-name detection |
 | F14 | Provide CLI commands: `diff`, `review`, `accept`, `reject` |
 | F15 | Produce a human-readable summary and a versioned JSON report |
+| F16 | Compensation never silently turns a regression into a pass. A comparison that passes only because policy-permitted compensation was applied gets the distinct verdict `PassWithCompensation`. Its result and report state what was compensated (lag and/or gain), by how much, and how many shift-exposed frames were excluded. The snapshot assertion prints the same facts. An uncompensated pass is always `Pass` |
 
 ### 2.2 Non-functional requirements
 
@@ -237,8 +239,14 @@ pub struct Report {
     pub worst_windows: Vec<WindowMetrics>,
     pub diagnosis: Option<Diagnosis>,
 }
+#[non_exhaustive]
+pub enum Verdict { Pass, PassWithCompensation, Fail }
+
 impl Report {
+    /// True for `Pass` and `PassWithCompensation`.
     pub fn passed(&self) -> bool;
+    /// True only for `PassWithCompensation`.
+    pub fn compensated(&self) -> bool;
     #[cfg(feature = "json")] pub fn to_json(&self) -> String;
 }
 impl fmt::Display for Report { /* human summary */ }
@@ -315,7 +323,7 @@ Exit codes follow `cmp` and `diff`:
 
 | Code | Meaning |
 |---|---|
-| 0 | Within tolerance (`diff`), or command succeeded |
+| 0 | Within tolerance (`diff`), including a pass with permitted compensation, which the summary and JSON label `pass_with_compensation`; or command succeeded |
 | 1 | Difference beyond tolerance (`diff`) |
 | 2 | Usage error, unreadable or invalid input, limit exceeded, I/O failure |
 
@@ -413,7 +421,7 @@ Invariants (checked by `Policy::validate`, which returns `InvalidPolicy`):
 
 ```text
 Report
-  verdict:            Pass | Fail
+  verdict:            Pass | PassWithCompensation | Fail
   failures:           [Failure]             # empty <=> Pass
   reference, actual:  StreamInfo { sample_rate, channels, frames, source_format }
   applied:            AppliedCompensation { lag: i32, gain: f64, excluded: EdgeExclusion }
@@ -459,6 +467,12 @@ Invariants:
    summary always states applied compensation, including on a pass.
    `applied.excluded` is non-zero only when `applied.lag != 0`. Each count is
    at most `|applied.lag|`, and the summary and a `Note` always state it.
+6. **No silent compensated pass (F16).** `applied` is non-identity (lag ≠ 0,
+   gain ≠ 1) exactly when `verdict == PassWithCompensation`. Compensation is
+   tried only after the uncompensated evaluation fails (§7.6). If the
+   compensated evaluation also fails, the report shows the uncompensated
+   evaluation, with `applied` as identity and `verdict == Fail`, and the
+   diagnosis explains the failure.
 4. When structural checks fail on sample rate or channel count, no metrics
    are computed (`channels` is empty), because residuals between unrelated
    layouts would be misleading.
@@ -503,6 +517,10 @@ Deliberate-update rules:
   a candidate was written.
 - `always` prints one line per updated baseline to stderr, so updates appear
   in test logs.
+- A snapshot that matches only with compensation (`Matched` with verdict
+  `PassWithCompensation`) passes, as the policy permits. The assertion prints
+  one stderr line naming the snapshot, the compensated lag and gain, and the
+  excluded frames, so the compensated pass is visible in test logs (F16).
 - Writes use a temporary file in the same directory followed by an atomic
   rename, so an interrupted run never leaves a truncated baseline.
 - Within one process, using the same snapshot name twice for different data
@@ -553,18 +571,20 @@ Boundaries:
        ▼
  ┌────────────────────────── compare ───────────────────────────┐
  │ 1 validate policy                     → Err(InvalidPolicy)   │
- │ 2 structural checks                   → Failures (stop on    │
- │   (rate, channels, length, non-finite)   rate/channel mismatch)│
- │ 3 if compensation allowed:                                    │
- │     estimate lag (bounded) → clamp to permission              │
- │     estimate gain → apply only if |gain dB| ≤ permission      │
- │ 4 residual pass (one linear pass per channel):                │
- │     levels, residual levels, windows, first divergence        │
- │ 5 evaluate tolerances (linear domain) → Failures              │
- │ 6 if diagnose = Always, or OnFailure and failed:              │
- │     estimate lag/gain (if not done), what-if residual passes, │
- │     classify explanation          (never touches Failures)    │
- │ 7 assemble immutable Report                                   │
+ │ 2 structural checks (rate, channels, length, non-finite)     │
+ │     → Failures; stop on rate or channel-count mismatch       │
+ │ 3 residual pass, uncompensated (one linear pass per channel):│
+ │     levels, residual levels, windows, first divergence       │
+ │ 4 evaluate tolerances (linear domain) → Failures, or Pass    │
+ │ 5 only if 4 failed on tolerances and compensation is allowed:│
+ │     estimate lag within ±lag_compensation (never lag_search) │
+ │     estimate gain → apply only if |gain dB| ≤ permission     │
+ │     re-run 3–4 with the shift-edge rule (§7.1);              │
+ │     pass → PassWithCompensation, else keep the result of 4   │
+ │ 6 if diagnose = Always, or OnFailure and failed:             │
+ │     estimate lag/gain (if not done), what-if residual passes,│
+ │     classify explanation          (never touches Failures)   │
+ │ 7 assemble immutable Report                                  │
  └──────────────────────────────┬───────────────────────────────┘
                                 ▼
           Report ──► Display (human) / JSON / snapshot store
@@ -586,7 +606,8 @@ Lifecycle of a snapshot test:
 5. `compare(baseline, actual, policy)` runs.
 6. The store acts on the outcome according to the mode table in §4.5.
 7. The macro panics with the report and update instructions on
-   `Mismatched` or `MissingBaseline`, and returns normally otherwise.
+   `Mismatched` or `MissingBaseline`, and returns normally otherwise. A
+   compensated match first prints its stderr notice (§4.5).
 
 ## 7. Algorithms and implementation choices
 
@@ -740,6 +761,19 @@ thresholds beyond the policy the user already chose.
 3. Record the explanation and what-if levels in `Diagnosis`. Do not modify
    `failures` or `verdict`.
 
+**Compensation can never silently turn a regression into a pass.** Permitted
+compensation is separate from diagnosis and runs in a fixed order. `compare`
+always evaluates the uncompensated residual first. It tries the permitted lag
+and/or gain compensation only if that evaluation fails on tolerances. The
+compensation lag is searched only within `±lag_compensation`, never within the
+diagnosis range `lag_search`, so diagnosis settings cannot change the verdict. A
+structural failure is never compensated. If the compensated evaluation
+passes, the verdict is `PassWithCompensation`, not `Pass`. The report,
+`Display`, JSON and the snapshot assertion state what was compensated (lag in
+frames, gain in dB), by how much, and how many shift-exposed frames each input
+had excluded. A caller that requires uncompensated passes checks
+`report.verdict == Verdict::Pass` or JSON `"verdict": "pass"`.
+
 "Added noise" or "band-limited change" classifications need spectral
 analysis and are deferred (§15). The first milestone reports these cases
 honestly as `Unexplained`, with windowed location data.
@@ -832,6 +866,9 @@ excluding the one shift-exposed frame of each input (§7.1): the actual's
 first frame and the reference's last frame. What remains matches exactly,
 so the explanation is `latency` and the what-if residual is `−∞ dBFS`.
 
+- `verdict` is one of `"pass"`, `"pass_with_compensation"` or `"fail"`. A
+  consumer that tests only for `"pass"` therefore treats a compensated pass as
+  not passing, which is the conservative behaviour.
 - `−∞ dB` is serialized as `null`, because JSON has no infinity. Linear values
   are always present and finite, so consumers can rely on them.
 - `schema_version` increments only on breaking changes. Removing or renaming
@@ -893,13 +930,15 @@ so the decoder can be replaced without a breaking change.
 |---|---|---|
 | `Err(Error)` | unreadable file, invalid policy, limits | No report; CLI exit 2; snapshot macro panics with the error |
 | `Failure` | rate/channel/length mismatch, non-finite samples, tolerance exceeded | Verdict `Fail`; CLI exit 1 |
+| Compensated pass | permitted lag/gain compensation needed to pass | Verdict `PassWithCompensation`; CLI exit 0; summary, JSON and snapshot assertion state what was compensated, by how much, and the excluded frames |
 | `Note` | compensation applied, relative check skipped on silence, channel skew, integer baseline quantization | Informational; never changes the verdict |
 
 ### 9.3 Human summary
 
 The `Display` output is designed for test logs:
 
-- First line: snapshot or file names and `PASSED`/`FAILED`.
+- First line: snapshot or file names and `PASSED`, `PASSED WITH COMPENSATION`
+  (followed by the lag, gain and excluded frames on the same line) or `FAILED`.
 - A table of checks × channels, with limit, measured dB and pass/fail status.
   It is truncated to 16 channels with a "+N more" line.
 - First divergence, worst windows (time in seconds and frames), applied
@@ -1019,6 +1058,7 @@ currently under permissive licences (MIT and/or Apache-2.0).
 | Gain recovery | For `a = g·r` with `g ∈ [−4, 4] \ {0}`, the estimated gain is within `1e−6` relative, and polarity is correct |
 | Diagnosis independence | `verdict` and `failures` are identical for `diagnose ∈ {Never, OnFailure, Always}` and for any `lag_search` |
 | Compensation bound | `|applied.lag| ≤ lag_compensation` and `|applied gain dB| ≤ gain_compensation` always |
+| No silent compensated pass | `applied` is non-identity exactly when `verdict == PassWithCompensation`; if the uncompensated comparison passes, the verdict is `Pass` whatever compensation is permitted |
 | Monotonic tolerance | If a comparison passes at threshold `t`, it passes at any looser threshold |
 | Round trip | Writing any finite buffer as float WAV and reading it back is bit-identical |
 
@@ -1034,14 +1074,19 @@ intent readable. The cases:
   results are: pass; pass (within the default tolerance); and fail with a
   `Latency` explanation, a what-if residual of `−∞ dBFS`, and
   `excluded_if_compensated` of one reference frame and one actual frame;
-- the same delayed tone with `allow_lag_compensation(4)`: passes with
-  `applied.lag = 1`, one shift-exposed frame excluded per input, and a note
-  stating both;
+- the same delayed tone with `allow_lag_compensation(4)`: verdict
+  `PassWithCompensation` (not `Pass`), with `applied.lag = 1`, one
+  shift-exposed frame excluded per input, all stated in the summary and JSON,
+  and printed by the snapshot assertion;
+- the bit-exact tone with `allow_lag_compensation(4)`: verdict `Pass`, with
+  `applied` as identity, because compensation is tried only after an
+  uncompensated failure;
 - a delayed render *and* a truncated tail: the latency what-if still reports
   the length difference that existed before the shift, so the explanation is
   `Unexplained` rather than `Latency`;
-- a gain change of 0.1 dB, failing with a `Gain` explanation, then passing
-  with `allow_gain_compensation(0.2)` and a recorded note;
+- a gain change of 0.1 dB, failing with a `Gain` explanation, then giving
+  verdict `PassWithCompensation` with `allow_gain_compensation(0.2)` and the
+  applied gain stated;
 - polarity inversion: fails, explained as `Polarity`, never compensated;
 - a click inserted at a known frame: fails with `first_divergence` and the
   worst window at that frame;
