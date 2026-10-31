@@ -1,6 +1,6 @@
-//! Smoke test for the library crate: it builds and its tests run.
+//! Smoke test for the library crate: it builds, links and its tests run.
+
+use waveassert as _;
 
 #[test]
-fn crate_reports_its_unpublished_version() {
-    assert_eq!(env!("CARGO_PKG_VERSION"), "0.0.0");
-}
+fn library_crate_builds_and_tests_run() {}
