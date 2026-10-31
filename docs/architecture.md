@@ -1118,7 +1118,9 @@ oversized declared data chunk, zero channels, unsupported format code,
 
 ### 13.5 CI gates
 
-On Linux, macOS and Windows, with stable Rust and the MSRV (1.85):
+The CI workflows (`.github/workflows/ci.yml`) are configured to run the
+following on Linux, macOS and Windows with stable Rust, and on Linux with the
+MSRV (1.85):
 
 ```text
 cargo fmt --all --check
@@ -1128,6 +1130,9 @@ cargo test --workspace --no-default-features
 cargo doc --workspace --no-deps            (RUSTDOCFLAGS="-D warnings")
 cargo deny check
 ```
+
+Those workflows have not yet run on GitHub. `scripts/check.sh` runs the same
+gates locally.
 
 Lint configuration: `#![forbid(unsafe_code)]` and `#![deny(missing_docs)]`
 in both crates, plus the panic-related lints listed in §11 for the library.

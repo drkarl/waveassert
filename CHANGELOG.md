@@ -13,5 +13,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   crate that installs a binary named `waveassert`; both are compiling
   placeholders.
 - Lint configuration for both crates, a `cargo deny` policy for advisories,
-  licences, bans and sources, and the CI quality gates.
+  licences, bans and sources, and the CI workflow definitions for those gates
+  (committed, not yet run on GitHub).
 - `scripts/check.sh`, which runs every gate locally.
