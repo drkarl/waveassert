@@ -4,7 +4,7 @@
 |---|---|
 | Project | WaveAssert: snapshot regression testing for rendered audio |
 | Crate and binary | `waveassert` (library), `waveassert-cli` (package installing the `waveassert` binary). Not yet published on crates.io |
-| Document status | Draft for review. Nothing here is implemented yet |
+| Document status | Design approved, not implemented. Nothing here is implemented yet |
 | Scope of this document | The first usable library and CLI, plus the boundaries of deferred work |
 
 All Rust signatures, command lines and output samples in this document are

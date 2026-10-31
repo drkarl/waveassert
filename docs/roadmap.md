@@ -271,7 +271,7 @@ the architecture document by that issue.
 | §7.2 defines the compared-frame count for shifted comparisons only as "the range of §7.1 minus shift-exposed frames" | Issue 19 states the exact range and denominator in code documentation and adds a worked example to §7.1 |
 | §4.5 says mode `no` "writes nothing", and also says a matching run removes stale candidates | Issue 14 implements removal of stale candidates on a match in every mode, and documents that this is the only file change `no` makes |
 | The README lists 16/24/32-bit integer PCM and omits 8-bit, while F2 and §4.2 include 8-bit | Issue 04 supports 8-bit as specified in F2, and issue 26 corrects the README wording |
-| Overlap-energy normalization in the lag estimator (§7.4) can favour lags with a tiny overlap when `K` approaches the signal length | Issue 20 ignores candidate lags whose overlap is under half of the shorter analysed input, and documents it. This is a conservative default that can be revisited |
+| Overlap-energy normalization in the lag estimator (§7.4) can favour lags with a tiny overlap when `K` approaches the signal length | Issue 20 ignores candidate lags whose overlap is under half of the shorter analysed input, and documents it as the default. The default is owner-approved |
 | Test tones need a deterministic sine across platforms (R2) | `libm` is added as a dev-dependency only. Nothing changes at runtime |
 | The Report invariants in §4.4 are numbered 1, 2, 3, 6, 4, 5 | Cosmetic. Issue 26 renumbers them |
 
