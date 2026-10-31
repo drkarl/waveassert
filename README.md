@@ -193,10 +193,23 @@ file formats, error model, testing strategy and open questions. See
 | CLI | Not started |
 | Tests and fixtures | Not started |
 | Published crate | None. `waveassert` is not yet published on crates.io |
-| Licence | Not yet selected |
+| Licence | MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`) |
 
 ## Contributing
 
 The project is not yet accepting code contributions; the design is under
 review. Comments on the architecture document are welcome once the
 repository is published.
+
+## License
+
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT license ([LICENSE-MIT](LICENSE-MIT))
+
+at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in this work by you, as defined in the Apache-2.0 license, shall
+be dual licensed as above, without any additional terms or conditions.

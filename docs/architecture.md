@@ -1026,9 +1026,10 @@ are also untrusted input when CI runs tests on a contribution.
 | Dev: deterministic noise | [`rand`](https://github.com/rust-random/rand) + `rand_pcg` with fixed seeds | Reproducible fixtures across platforms | Hand-written xorshift |
 
 The runtime dependencies of the library are `hound`, `thiserror`, `serde`,
-`serde_json` and `tempfile`. Licence compatibility is checked with
-`cargo deny` once the project licence is chosen. All dependencies above are
-currently under permissive licences (MIT and/or Apache-2.0).
+`serde_json` and `tempfile`. The project is licensed under `MIT OR Apache-2.0`,
+and licence compatibility is checked with `cargo deny`. The runtime
+dependencies above are under MIT and/or Apache-2.0 (`hound` is Apache-2.0
+only, which is compatible).
 
 ## 13. Testing strategy and quality gates
 

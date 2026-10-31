@@ -16,7 +16,7 @@ Section references such as §7.1 point into the architecture document.
 | **M1. Tolerance comparator and `diff`** | `waveassert diff a.wav b.wav` and `waveassert::compare` with tolerances, windows, human and JSON reports, CI on three platforms | 12 | 73 – 111 |
 | **M2. Snapshot workflow** | `assert_audio_snapshot!`, update modes, candidates, `review` / `accept` / `reject` | 6 | 38 – 57 |
 | **M3. Diagnosis and permitted compensation** | Bounded lag and gain estimation, the shift-edge rule, `PassWithCompensation`, CLI flags | 7 | 50 – 74 |
-| **M4. Documentation and release readiness** | Tolerance guide, worked example, benchmarks, licence, semver checks, publish dry run | 3 | 20 – 31 |
+| **M4. Documentation and release readiness** | Tolerance guide, worked example, benchmarks, semver checks, publish dry run | 3 | 20 – 31 |
 | **Total** | | **28** | **181 – 273** |
 
 Estimates are focused engineering hours for one engineer who knows Rust and
@@ -203,7 +203,7 @@ excluded frames. Changing `diagnose` or `lag_search` never changes a verdict.
 |---|---|---|---|
 | 26 | Crate docs, tolerance-selection guide and runnable example | 25 | 10 – 15 h |
 | 27 | Criterion benchmarks and the debug-build recommendation | 07, 20 | 4 – 6 h |
-| 28 | Release readiness: licence, metadata, semver checks, dry run | 12, 26, 27 | 6 – 10 h |
+| 28 | Release readiness: metadata, semver checks, dry run | 12, 26, 27 | 6 – 10 h |
 
 **Quality gates.** The cross-cutting gates, plus: doctests for the worked
 example; `cargo publish --dry-run` for both crates; `cargo semver-checks` on
@@ -253,14 +253,40 @@ trigger says what evidence would justify planning them.
 
 ## 7. Open points and notes
 
-**Needs a decision (owner).**
+**To confirm before release.**
 
-1. **Licence.** The README says none is selected. Needed before issue 28. The
-   recommended default is dual MIT or Apache-2.0, matching the Rust ecosystem
-   and the dependencies listed in §12. Issue 01 configures `cargo deny` so
-   workspace crates are not licence-checked until then.
-2. **Crate names.** Confirm `waveassert` and `waveassert-cli` are free on
-   crates.io before issue 28 (the design assumes they are).
+1. **Crate names.** `waveassert` and `waveassert-cli` were not registered on
+   crates.io when last checked, so the design assumes they are free. Issue 28
+   re-checks before the release candidate.
+
+**Decided.** The project licence is `MIT OR Apache-2.0` (files `LICENSE-MIT`
+and `LICENSE-APACHE` at the repository root). Issue 01 sets `license` in the
+workspace metadata and a licence allow-list in `deny.toml`, so licence
+compatibility is enforced from the first commit of code. Third-party
+dependencies and their licences:
+
+| Crate | Role | Licence |
+|---|---|---|
+| `hound` | runtime, WAV I/O | Apache-2.0 |
+| `thiserror`, `serde`, `serde_json`, `tempfile` | runtime | MIT OR Apache-2.0 |
+| `clap` | CLI only | MIT OR Apache-2.0 |
+| `proptest`, `assert_cmd`, `predicates`, `rand`, `rand_pcg` | dev | MIT OR Apache-2.0 |
+| `insta` | dev | Apache-2.0 |
+| `criterion` | dev | Apache-2.0 OR MIT |
+| `libm` | dev, deterministic test tones | MIT |
+| `libfuzzer-sys` | fuzz crate only, not shipped | (MIT OR Apache-2.0) AND NCSA |
+| `rustfft` | deferred | MIT OR Apache-2.0 |
+| `realfft` | deferred | MIT |
+| `symphonia` | deferred, needs review before use | MPL-2.0 |
+
+All of these are compatible with distribution under `MIT OR Apache-2.0`. Two
+notes. `hound` being Apache-2.0 only means a built binary carries Apache-2.0
+terms for that component, which `cargo deny` allows through the allow-list.
+`symphonia` is MPL-2.0 (file-level copyleft): it is not part of the committed
+roadmap, and the licence review listed in section 6 applies before it is added.
+`proptest` and `criterion` currently require compilers newer than 1.85; they
+are dev-dependencies and resolver 3 picks compatible versions for the MSRV job
+(R8).
 
 **Clarifications of the architecture found while planning.** None of these
 change the design. Each is resolved in the issue named, and mirrored back into
