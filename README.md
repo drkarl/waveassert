@@ -8,8 +8,9 @@ explicit, documented tolerances, and for explaining *why* it does not when a
 check fails.
 
 > **Status: design stage. Nothing described here is implemented yet.**
-> This repository currently contains this README and the
-> [architecture design](docs/architecture.md). There is no code, no published
+> This repository currently contains this README, the
+> [architecture design](docs/architecture.md) and the
+> [implementation roadmap](docs/roadmap.md). There is no code, no published
 > crate and no stable API. All code and command examples below are
 > **proposed** and may change during review.
 
@@ -186,7 +187,8 @@ file formats, error model, testing strategy and open questions. See
 
 | Area | State |
 |---|---|
-| Architecture design | Draft, awaiting review |
+| Architecture design | Approved |
+| Implementation roadmap | Draft, awaiting review |
 | Library code | Not started |
 | CLI | Not started |
 | Tests and fixtures | Not started |
