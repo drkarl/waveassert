@@ -1001,8 +1001,8 @@ are also untrusted input when CI runs tests on a contribution.
   files below the given directory, and refuse to follow directory symlinks.
 - **No code execution, network or environment side effects.** The library
   reads only `WAVEASSERT_UPDATE` and `CI`.
-- **Supply chain:** small dependency set (§12); `cargo deny` runs in CI for
-  advisories (RustSec), licences, duplicate versions and source restrictions;
+- **Supply chain:** small dependency set (§12); `cargo deny` is configured in CI
+  (§13.5) for advisories (RustSec), licences, duplicate versions and source restrictions;
   `Cargo.lock` is committed for the CLI.
 - **Fuzzing:** a `cargo-fuzz` target for `wav::read_from` with small limits is
   added with the WAV module. It runs locally and on a schedule, not on every
