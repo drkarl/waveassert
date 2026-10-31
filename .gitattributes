@@ -1,0 +1,4 @@
+* text=auto eol=lf
+
+# WAV fixtures are compared byte for byte; never apply text conversions.
+*.wav binary

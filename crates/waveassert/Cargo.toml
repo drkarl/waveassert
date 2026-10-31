@@ -1,0 +1,19 @@
+[package]
+name = "waveassert"
+description = "Snapshot regression testing for rendered audio: compare audio against stored references within explicit tolerances."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+default = ["json"]
+# Reserved for the JSON report (§12). No code behind it yet.
+json = []
+
+[lints]
+workspace = true
+
+[dependencies]

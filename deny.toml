@@ -1,0 +1,27 @@
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+unmaintained = "workspace"
+
+[licenses]
+version = 2
+unused-allowed-license = "allow"
+# Start with the licences the project itself and its first dependencies use.
+# Extend only when `cargo deny check licenses` on the real tree requires it, and
+# justify each addition in a comment (§12).
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Unicode-3.0",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
