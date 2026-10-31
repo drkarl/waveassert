@@ -416,7 +416,9 @@ Report
   verdict:            Pass | Fail
   failures:           [Failure]             # empty <=> Pass
   reference, actual:  StreamInfo { sample_rate, channels, frames, source_format }
-  applied:            AppliedCompensation { lag: i32, gain: f64 }   # 0 and 1.0 when none
+  applied:            AppliedCompensation { lag: i32, gain: f64, excluded: EdgeExclusion }
+                                            # lag 0, gain 1.0, nothing excluded when none
+  # EdgeExclusion { reference_frames: u32, actual_frames: u32 }: shift-exposed frames (§7.1)
   channels:           [ChannelMetrics]      # one per channel when channel counts match
   first_divergence:   Option<Location { channel, frame, seconds }>
   worst_windows:      [WindowMetrics { channel, start_frame, frames, residual_peak, residual_rms }]
@@ -442,6 +444,7 @@ Diagnosis
   gain:        Option<GainEstimate { linear: f64, db: f64, polarity_inverted: bool, per_channel: [Option<f64>] }>
   explanation: Latency | Gain | Polarity | LatencyAndGain | Unexplained
   residual_if_compensated: [Levels]         # per channel, what-if only
+  excluded_if_compensated: EdgeExclusion    # shift-exposed frames left out of the what-if (§7.1)
 ```
 
 Invariants:
@@ -454,6 +457,8 @@ Invariants:
 3. `applied.lag != 0` only when `lag_compensation` permits that lag, and
    `applied.gain != 1.0` only when `gain_compensation` permits it. The human
    summary always states applied compensation, including on a pass.
+   `applied.excluded` is non-zero only when `applied.lag != 0`. Each count is
+   at most `|applied.lag|`, and the summary and a `Note` always state it.
 4. When structural checks fail on sample rate or channel count, no metrics
    are computed (`channels` is empty), because residuals between unrelated
    layouts would be misleading.
@@ -585,35 +590,55 @@ Lifecycle of a snapshot test:
 
 ## 7. Algorithms and implementation choices
 
-### 7.1 Alignment model: implicit zero padding
+### 7.1 Alignment model: zero padding plus a shift-edge rule
 
-Both inputs are treated as zero outside their stored range. For an applied
-lag `L`, the compared index range is the union of the two signals'
-supports on the reference timeline:
+**Plain comparison (no lag).** Both inputs are treated as zero outside their
+stored range. The compared range is `n ∈ [0, max(N_ref, N_act))`, and
+`residual[n] = actual[n] − g · reference[n]`, with out-of-range samples equal to 0.
+
+- Every sample of both inputs contributes to the residual exactly once. A
+  truncated reverb tail or extra trailing content shows up as residual
+  energy.
+- A length difference is evaluated twice: by the explicit `LengthMismatch`
+  check against `max_length_difference`, and through the residual energy of
+  the unmatched tail.
+
+**Shifted comparison (lag `L ≠ 0`).** This applies to a diagnosis what-if or
+to policy-permitted lag compensation. Shifting the actual signal by `L`
+exposes frames whose counterpart in the other input existed before the
+shift and does not exist after it. Comparing those frames with silence would
+make every pure latency change look like a large residual: with equal
+lengths `N` and `L = 1`, `residual[N−1] = 0 − reference[N−1]`. The **edge
+rule** excludes exactly those *shift-exposed* frames, and nothing else:
 
 ```text
-n ∈ [min(0, −L), max(N_ref, N_act − L))
 residual[n] = actual[n + L] − g · reference[n]        (out of range ⇒ 0)
+
+L > 0 (actual is later):
+  excluded actual frames     m ∈ [0, min(L, N_act, N_ref))                 # moved before n = 0
+  excluded reference frames  n ∈ [max(0, N_act − L), min(N_act, N_ref))    # lost their partner at the tail
+L < 0 (actual is earlier): the mirror image, with K = −L:
+  excluded reference frames  n ∈ [0, min(K, N_ref, N_act))                 # lost their partner at the head
+  excluded actual frames     m ∈ [max(0, N_ref − K), min(N_ref, N_act))    # moved past n = N_ref
 ```
 
-Consequences:
-
-- **No sample is silently excluded.** Every sample of both inputs contributes
-  to the residual exactly once. A truncated reverb tail or extra trailing
-  content shows up as residual energy. Leading content hidden by a lag shift
-  is still compared, against silence.
-- A length difference is evaluated twice: as the explicit
-  `LengthMismatch` structural check against `max_length_difference`, and
-  through the residual energy of the unmatched tail.
+All other frames, including any length difference that existed *before* the
+shift, are still compared under zero padding. Each input loses at most `|L|`
+frames, and `|L|` is bounded by `lag_search` or `lag_compensation`. The excluded counts are
+recorded in `AppliedCompensation::excluded` or
+`Diagnosis::excluded_if_compensated`. When the applied lag is non-zero, a
+`Note` and the human summary state them. So no sample is excluded
+*silently*: plain comparisons exclude nothing, and shifted comparisons
+exclude a bounded, reported edge.
 
 ### 7.2 Levels and residual metrics
 
 For each channel, one forward pass accumulates in `f64`:
 
 - `peak = max |x|` and `rms = sqrt(Σ x² / n)` for reference, actual and
-  residual. `n` is the length of the compared range. For RMS this
-  deliberately includes padded zeros, so RMS stays comparable between the two
-  inputs.
+  residual. `n` is the number of compared frames: the range of §7.1 minus any
+  shift-exposed frames. For RMS this deliberately includes padded zeros, so
+  RMS stays comparable between the two inputs.
 - window accumulators, which are fixed, non-overlapping, and aligned to frame 0
   of the reference timeline; the last window may be shorter;
 - the first index where `|residual|` exceeds the residual-peak tolerance, or
@@ -702,7 +727,10 @@ thresholds beyond the policy the user already chose.
 1. Estimate the lag within `max(lag_search, lag_compensation)`, then the gain
    at that lag.
 2. Evaluate what-if residuals, at most four extra linear passes, in this
-   order. The first that passes all tolerances is the explanation:
+   order. Any what-if with `L ≠ 0` applies the shift-edge rule of §7.1:
+   only the shift-exposed frames are left out, and their counts are recorded
+   in `excluded_if_compensated`. The first what-if that passes all
+   tolerances is the explanation:
    - latency only (`L ≠ 0`, `g = 1`) → `Latency`
    - gain only (`L = 0`, `g`) → `Gain`, or `Polarity` if `g < 0` and
      `|g| ≈ 1` within the gain-delta tolerance
@@ -775,7 +803,7 @@ honestly as `Unexplained`, with windowed location data.
   "actual":    { "sample_rate": 48000, "channels": 2, "frames": 96000, "source_format": null },
   "policy": { "residual_peak_dbfs": -80.0, "residual_rms_dbfs": -90.0, "lag_search": 64,
               "lag_compensation": null, "gain_compensation_db": null, "window_ms": 10.0 },
-  "applied": { "lag": 0, "gain": 1.0 },
+  "applied": { "lag": 0, "gain": 1.0, "excluded": { "reference_frames": 0, "actual_frames": 0 } },
   "failures": [
     { "kind": "tolerance_exceeded", "check": "residual_peak", "channel": 0,
       "measured": 0.0288, "measured_db": -30.81, "limit_db": -80.0 }
@@ -790,13 +818,19 @@ honestly as `Unexplained`, with windowed location data.
   "worst_windows": [ { "channel": 0, "start_frame": 0, "frames": 480, "residual_peak_db": -30.81, "residual_rms_db": -33.81 } ],
   "diagnosis": { "explanation": "latency", "lag": { "frames": 1, "correlation": 0.9998 },
                  "gain": { "linear": 1.0, "db": 0.0, "polarity_inverted": false },
-                 "residual_if_compensated": [ { "peak_db": null, "rms_db": null } ] },
+                 "residual_if_compensated": [ { "peak": 0.0, "peak_db": null, "rms": 0.0, "rms_db": null } ],
+                 "excluded_if_compensated": { "reference_frames": 1, "actual_frames": 1 } },
   "notes": []
 }
 ```
 
-The values above are illustrative: a 440 Hz sine at amplitude 0.5, delayed by
-one frame.
+The values above are illustrative. The input is a 440 Hz sine at amplitude
+0.5, starting at phase 0. The actual render is the same sine delayed by one
+frame and cut to the same 96000 frames. The plain comparison fails (no lag
+compensation is permitted). The latency what-if removes the shift by
+excluding the one shift-exposed frame of each input (§7.1): the actual's
+first frame and the reference's last frame. What remains matches exactly,
+so the explanation is `latency` and the what-if residual is `−∞ dBFS`.
 
 - `−∞ dB` is serialized as `null`, because JSON has no infinity. Linear values
   are always present and finite, so consumers can rely on them.
@@ -979,7 +1013,8 @@ currently under permissive licences (MIT and/or Apache-2.0).
 |---|---|
 | Identity | For any finite buffer `x`, `compare(x, x, exact)` passes with residual peak `0` |
 | Symmetry | With no gain compensation, swapping reference and actual leaves residual peak and RMS unchanged |
-| Coverage | Total frames across windows equals the union range length of §7.1 |
+| Coverage | In a plain comparison, total frames across windows equal `max(N_ref, N_act)` |
+| Edge rule | For any lag `L` and any lengths, each excluded count is `≤ |L|` and matches the formulas of §7.1. With `L = 0` both counts are 0. For equal-length inputs where the actual is the reference delayed by `L` with zero fill, the latency what-if residual is exactly 0 |
 | Lag recovery | For seeded noise `r` and shift `k ∈ [−K, K]`, the estimated lag is `k` |
 | Gain recovery | For `a = g·r` with `g ∈ [−4, 4] \ {0}`, the estimated gain is within `1e−6` relative, and polarity is correct |
 | Diagnosis independence | `verdict` and `failures` are identical for `diagnose ∈ {Never, OnFailure, Always}` and for any `lag_search` |
@@ -994,9 +1029,17 @@ committed as binary files. This keeps the repository small and each case's
 intent readable. The cases:
 
 - the reference demonstration: a tone rendered bit-exact, with TPDF dither
-  added, and delayed by one frame. Hash comparison would flag all three as
-  different. The expected results are pass, pass (within default tolerance),
-  and fail with `Latency` explanation;
+  added, and delayed by one frame, all three at the same length as the
+  reference. Hash comparison would flag all three as different. The expected
+  results are: pass; pass (within the default tolerance); and fail with a
+  `Latency` explanation, a what-if residual of `−∞ dBFS`, and
+  `excluded_if_compensated` of one reference frame and one actual frame;
+- the same delayed tone with `allow_lag_compensation(4)`: passes with
+  `applied.lag = 1`, one shift-exposed frame excluded per input, and a note
+  stating both;
+- a delayed render *and* a truncated tail: the latency what-if still reports
+  the length difference that existed before the shift, so the explanation is
+  `Unexplained` rather than `Latency`;
 - a gain change of 0.1 dB, failing with a `Gain` explanation, then passing
   with `allow_gain_compensation(0.2)` and a recorded note;
 - polarity inversion: fails, explained as `Polarity`, never compensated;
@@ -1111,7 +1154,7 @@ with if no other decision is made.
 
 | # | Question | Recommended default |
 |---|---|---|
-| Q1 | Do lag/gain diagnosis and the report add enough over "absolute tolerance plus regenerate" to justify their complexity? No ablation on real projects' golden tests has been run. | Build the plain comparator first (step 3 in §14) and keep diagnosis in a separate module, run only on failure. Evaluate it against real-world golden tests during implementation. If it adds little, ship the comparator and snapshot flow without it. The API (`Report::diagnosis: Option<_>`) allows that without breaking changes |
+| Q1 | Do lag/gain diagnosis and the report add enough over "absolute tolerance plus regenerate" to justify their complexity? No ablation on real projects' golden tests has been run. | **The plain comparator is built first** (step 3 in §14), and is a complete, useful tool on its own. **Diagnosis is a removable module:** it is separate, runs only on failure, and never affects the verdict. Evaluate it against real-world golden tests during implementation. If it adds little, ship the comparator and snapshot flow without it. `Report::diagnosis: Option<_>` and the separate `allow_*_compensation` settings allow that without breaking the API |
 | Q2 | Default tolerances | Residual peak ≤ −80 dBFS and residual RMS ≤ −90 dBFS per channel. This tolerates float reordering, FMA differences and 16-bit TPDF dither (about −95 dBFS RMS), and fails audible changes. Document it as a starting point rather than an audibility guarantee |
 | Q3 | Snapshot location: manifest-relative directory or next to the test source file (the `insta` convention) | `<CARGO_MANIFEST_DIR>/tests/audio_snapshots/`. Binary files are easier to manage, `.gitattributes`/LFS rules stay simple, and the location is the same for unit and integration tests. Revisit if users ask for per-module directories |
 | Q4 | Default baseline sample format | 32-bit float, for a bit-exact round trip. 24-bit and 16-bit are opt-in with a quantization report |
@@ -1122,3 +1165,4 @@ with if no other decision is made.
 | Q9 | Duplicate snapshot names under `cargo nextest` (one process per test) | Document the limitation. Optionally add a `waveassert review --check-duplicates` scan of test sources later. Do not add cross-process locking |
 | Q10 | Should RMS over the compared range include zero padding? | Yes (§7.2), so length differences are visible. The alternative (overlap only) is not offered |
 | Q11 | JSON `−∞` representation | `null` for dB fields, with the linear values always present (§8.2) |
+| Q12 | Edge rule for shifted comparisons: what happens to frames exposed by a lag what-if or by permitted lag compensation | Exclude only the shift-exposed frames (at most `|L|` per input, §7.1), and count and report them in the diagnosis or in `applied.excluded` and a note. Plain comparison keeps full zero padding. Rejected alternatives: comparing exposed frames with silence (every pure latency change would look unexplained), and trimming both inputs to the overlap (that would hide genuine length differences) |

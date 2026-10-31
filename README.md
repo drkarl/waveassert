@@ -85,9 +85,12 @@ fn hall_reverb_tail_is_stable() {
 }
 ```
 
-If a change delays the output by one frame, the test fails. The report
-explains the cause. Because the policy does not allow latency compensation,
-the latency change is *diagnosed*, not *accepted*:
+Suppose a change delays the output by one frame and the render length stays
+the same. The test fails, and the report explains the cause. Because the
+policy does not allow latency compensation, the latency change is
+*diagnosed*, not *accepted*. When the diagnosis removes the delay, it leaves
+out only the frames the shift exposes (one at each end here) and says so. The
+figures below are illustrative, for a 440 Hz test tone at half scale:
 
 ```text
 audio snapshot 'hall_reverb_tail' FAILED   (illustrative output)
@@ -96,7 +99,8 @@ audio snapshot 'hall_reverb_tail' FAILED   (illustrative output)
   residual RMS         -90.0 dBFS   -33.8 dBFS    -33.8 dBFS   FAIL
   first divergence     ch0, frame 1 (0.00002 s)
   diagnosis            actual is 1 frame later than the baseline; with that
-                       delay removed the residual is -inf dBFS (identical).
+                       delay removed the residual is -inf dBFS (identical),
+                       excluding the 1 shift-exposed frame of each input.
                        Latency compensation is not allowed by this policy.
   candidate written    tests/audio_snapshots/hall_reverb_tail.new.wav
 ```
@@ -125,7 +129,8 @@ First milestone (see [Initial implementation slice](docs/architecture.md#14-init
   samples.
 - Bounded integer-lag (latency) and gain/polarity estimation for diagnosis.
   Compensation is applied only when the policy explicitly allows it, and
-  within an explicit limit.
+  within an explicit limit. A shifted comparison leaves out only the frames
+  the shift exposes, and reports how many.
 - Time-windowed diagnostics: where the difference begins and which windows
   differ most.
 - A snapshot assertion macro with an explicit update mode
