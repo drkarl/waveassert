@@ -212,7 +212,7 @@ file formats, error model, testing strategy and open questions. See
 | Architecture design | Approved |
 | Implementation roadmap | Draft, awaiting review |
 | Cargo workspace | Present: `waveassert` library and `waveassert-cli` binary, both placeholders |
-| CI quality gates | Present: Linux, macOS and Windows on stable Rust, plus Linux on the MSRV |
+| CI quality gates | Workflows configured for Linux, macOS and Windows on stable Rust, plus Linux on the MSRV; they have not yet run on GitHub |
 | Library code | Not started; the crate compiles and documents itself |
 | CLI | Placeholder; `waveassert --version` only |
 | Tests and fixtures | Smoke tests only |
@@ -223,8 +223,8 @@ file formats, error model, testing strategy and open questions. See
 
 The workspace uses edition 2024 with Rust 1.85 as the minimum supported
 version; `rust-toolchain.toml` selects the toolchain, and `Cargo.lock` is
-committed. `scripts/check.sh` runs every gate that CI runs, so a single command
-is enough before opening a pull request:
+committed. `scripts/check.sh` runs every gate the CI workflows invoke, so a
+single command is enough before opening a pull request:
 
 ```console
 $ cargo install cargo-deny --version 0.19.0 --locked   # once
@@ -242,9 +242,11 @@ $ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 $ cargo deny check
 ```
 
-CI runs the same gates on Linux, macOS and Windows with stable Rust, and on
-Linux with Rust 1.85 (the MSRV). A separate scheduled workflow checks the
-dependency tree for security advisories.
+CI workflows are configured to run the same gates on Linux, macOS and Windows
+with stable Rust, and on Linux with Rust 1.85 (the MSRV); a separate scheduled
+workflow is configured to check the dependency tree for security advisories.
+These workflows have not yet run on GitHub, so a passing `scripts/check.sh` run
+locally is the only executed evidence of the gates today.
 
 ## Contributing
 
