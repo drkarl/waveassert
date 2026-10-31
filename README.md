@@ -9,12 +9,34 @@ check fails.
 
 > **Status: design stage. Nothing described here is implemented yet.**
 > This repository currently contains this README, the
-> [architecture design](docs/architecture.md) and the
-> [implementation roadmap](docs/roadmap.md). There is no code, no published
-> crate and no stable API. All code and command examples below are
-> **proposed** and may change during review.
+> [architecture design](docs/architecture.md), the
+> [implementation roadmap](docs/roadmap.md), and a Cargo workspace whose two
+> crates are compiling placeholders. There is no published crate and no stable
+> API. All code and command examples below are **proposed** and may change
+> during review.
 
 ---
+
+## Build and run
+
+The repository is a scaffold: the library crate is empty and the binary only
+reports its version and prints usage. No checking functionality is
+implemented yet. Build, test and run it with:
+
+```console
+$ cargo build --workspace
+$ cargo test --workspace
+$ ./scripts/check.sh                       # every quality gate; needs cargo-deny 0.19
+$ cargo run -p waveassert-cli -- --version
+waveassert 0.0.0
+$ ./target/debug/waveassert
+waveassert 0.0.0: audio snapshot checking is not implemented yet.
+Usage: waveassert --version
+```
+
+The last command prints that usage message to standard error and exits with
+status 2. Rust 1.85 or newer is required; `rust-toolchain.toml` selects the
+toolchain. The gate commands are listed under [Development](#development).
 
 ## The problem
 
@@ -106,7 +128,7 @@ audio snapshot 'hall_reverb_tail' FAILED   (illustrative output)
   candidate written    tests/audio_snapshots/hall_reverb_tail.new.wav
 ```
 
-Comparing two files from a shell or CI job:
+Comparing two files from a shell or CI job (proposed CLI, not implemented):
 
 ```console
 $ waveassert diff reference.wav actual.wav --max-residual-rms -90 --search-lag 64 --json
@@ -189,11 +211,40 @@ file formats, error model, testing strategy and open questions. See
 |---|---|
 | Architecture design | Approved |
 | Implementation roadmap | Draft, awaiting review |
-| Library code | Not started |
-| CLI | Not started |
-| Tests and fixtures | Not started |
+| Cargo workspace | Present: `waveassert` library and `waveassert-cli` binary, both placeholders |
+| CI quality gates | Present: Linux, macOS and Windows on stable Rust, plus Linux on the MSRV |
+| Library code | Not started; the crate compiles and documents itself |
+| CLI | Placeholder; `waveassert --version` only |
+| Tests and fixtures | Smoke tests only |
 | Published crate | None. `waveassert` is not yet published on crates.io |
 | Licence | MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`) |
+
+## Development
+
+The workspace uses edition 2024 with Rust 1.85 as the minimum supported
+version; `rust-toolchain.toml` selects the toolchain, and `Cargo.lock` is
+committed. `scripts/check.sh` runs every gate that CI runs, so a single command
+is enough before opening a pull request:
+
+```console
+$ cargo install cargo-deny --version 0.19.0 --locked   # once
+$ ./scripts/check.sh
+```
+
+The gates themselves:
+
+```console
+$ cargo fmt --all --check
+$ cargo clippy --workspace --all-targets --all-features -- -D warnings
+$ cargo test --workspace --all-features
+$ cargo test --workspace --no-default-features
+$ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+$ cargo deny check
+```
+
+CI runs the same gates on Linux, macOS and Windows with stable Rust, and on
+Linux with Rust 1.85 (the MSRV). A separate scheduled workflow checks the
+dependency tree for security advisories.
 
 ## Contributing
 

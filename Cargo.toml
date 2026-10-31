@@ -1,0 +1,23 @@
+[workspace]
+members = ["crates/waveassert", "crates/waveassert-cli"]
+resolver = "3"
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/drkarl/waveassert"
+publish = false
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# §7.8 of the architecture relies on Rust never contracting `a * b + c` into a
+# fused multiply-add; applying this suggestion would change the results.
+suboptimal_flops = "allow"
+# The comparison core is built on linear float comparisons, and `Policy::exact`
+# tests residual samples against zero exactly by design (§7.3, §4.4).
+float_cmp = "allow"
+# Converting between f32 and f64 sample representations is the crate's purpose
+# (§4.2); the loss is documented there.
+cast_precision_loss = "allow"

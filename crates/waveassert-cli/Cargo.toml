@@ -1,0 +1,21 @@
+[package]
+name = "waveassert-cli"
+description = "Command-line interface for WaveAssert."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "waveassert"
+path = "src/main.rs"
+# A binary has no public API; documenting it also collides with the library's
+# documentation directory (cargo issue #6313).
+doc = false
+
+[lints]
+workspace = true
+
+[dependencies]
